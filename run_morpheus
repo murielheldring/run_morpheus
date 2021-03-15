@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+
+import os
+import shutil
+import glob
+import sys
+import argparse
+import textwrap
+
+# make script compatible with python2
+if sys.version_info[0] < 3:
+    import future
+
+home = os.path.expanduser("~")
+
+
+def parse_args():
+    description = """
+Wrapper script to run Morpheus on the commandline.
+This script will:
+    - Create a data folder: ./data/SIMULATIONID/
+    - Create a log folder (if it does not exist): ./log/
+    - Run the simulation in the data folder and log the Morpheus output in ./log/MORPHEUS_SIMULATIONID.out
+    - gzip all .txt and .csv files (if requested)
+"""
+    cwd = os.getcwd()
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description=textwrap.dedent(description))
+
+    parser.add_argument("script", type=str, help="Full path to Morpheus xml script")
+    parser.add_argument("-z", "--zip", action="store_true", default=False, help="gzip all .csv and .txt files")
+    parser.add_argument("-m", "--morpheus", type=str, default=home + '/.local/bin/morpheus',
+                        help="Morpheus binary to use (default: %(default)s)")
+    parser.add_argument("-j", "--nthreads", type=int, default=1,
+                        help="Number of threads Morpheus may use (default: %(default)s)")
+    parser.add_argument("-d", "--delete_old", action="store_true", default=False, help="Remove old files")
+    parser.add_argument("--dataroot", type=str, default=cwd + '/data',
+                          help="Root folder for data files (default: %(default)s)")
+    parser.add_argument("--imageroot", type=str, help="If defined, images are moved from the simulation folder"
+                                                   "in the data root, to a folder with the same name in the"
+                                                   "image root.")
+    parser.add_argument("--logdir", type=str, default=cwd + '/log',
+                        help="Folder where the log files are stored (default: %(default)s)")
+    parser.add_argument("--imext", type=str, default='png',help='extension of images (without .)')
+    parser.add_argument("--simid", type=str,
+                        help="Simulation identifier used for creating the data folder in the data root and log file. If omitted this will be the file name of the model (without '.xml')")
+    parser.add_argument("-q", "--quiet", action="store_true", help="suppress output")
+    return parser.parse_args()
+
+
+def make_clean_dir(dest):
+    if os.path.isdir(dest):
+        os.system('rm -r {}'.format(dest))
+    os.mkdir(dest)
+
+
+def main():
+    # read command line arguments and set some variables
+    args = parse_args()
+    cwd = os.getcwd()
+    if not args.simid:
+        args.simid = args.script.split('/')[-1].split('.')[0]
+    datadir = '{}/{}'.format(args.dataroot, args.simid)
+    move_im = args.imageroot is not None
+    if move_im:
+        imdir = '{}/{}'.format(args.imageroot, args.simid)
+    if not args.script.startswith('/'):
+        args.script = '{}/{}'.format(cwd, args.script)
+
+    # create logdir if it does not exist:
+    if not os.path.isdir(args.logdir):
+        os.mkdir(args.logdir)
+
+    # create or clean up simulation folder and go there
+    if os.path.isdir(datadir) and args.delete_old:
+        if not args.quiet:
+            print('Remove old data folder {}'.format(datadir))
+        shutil.rmtree(datadir)
+    if not os.path.isdir(datadir):
+        if not args.quiet:
+            print('Create new data folder {}'.format(datadir))
+        os.makedirs(datadir)
+    else:
+        print('Overwrite data in {}'.format(datadir))
+    os.chdir(datadir)
+
+    # set the number of threads a single simulation is allowed to use
+    if not args.quiet:
+        print('===== Run simulation: =====')
+        print('binary: {}'.format(args.morpheus))
+        print('script: {}'.format(args.script))
+        print('datadir: {}'.format(datadir))
+        if move_im:
+            print('imagedir: {}'.format(imdir))
+        print('log: {}/MORPHEUS_{}'.format(args.logdir, args.simid))
+        print('threads: {}'.format(args.nthreads))
+    os.environ["OMP_NUM_THREADS"] = str(args.nthreads)
+
+    # run simulation
+    shutil.copy(args.script, './')
+
+    os.system('{} {} > {}/MORPHEUS_{}.out 2>&1'.format(args.morpheus, args.script, args.logdir, args.simid))
+
+    # zip results (if requested)
+    if args.zip:
+        if len(glob.glob('*.csv')) > 0:
+            os.system('gzip *.csv')
+        if len(glob.glob('*.txt')) > 0:
+            os.system('gzip *.txt')
+    if move_im and (len(glob.glob('{}/*.{}'.format(datadir,args.imext)))) > 0:
+        os.chdir(cwd)
+        if os.path.isdir(imdir) and args.delete_old:
+            if not args.quiet:
+                print('Remove old image folder {}'.format(imdir))
+            shutil.rmtree(imdir)
+        if not os.path.isdir(imdir):
+            if not args.quiet:
+                print('Create new image folder {}'.format(imdir))
+            os.makedirs(imdir)
+        else:
+            print('Overwrite images in {}'.format(imdir))
+        os.system('mv {}/*.png {}'.format(datadir,imdir))
+
+    # if args.imageroot:
+
+
+if __name__ == "__main__":
+    main()
