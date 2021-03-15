@@ -68,6 +68,8 @@ def main():
     if not args.script.startswith('/'):
         args.script = '{}/{}'.format(cwd, args.script)
     input_image = args.input_image is not None
+    if input_image:
+        args.input_image = '{}/{}'.format(cwd,args.input_image)
 
     # create logdir if it does not exist:
     if not os.path.isdir(args.logdir):
@@ -92,6 +94,8 @@ def main():
         print('binary: {}'.format(args.morpheus))
         print('script: {}'.format(args.script))
         print('datadir: {}'.format(datadir))
+        if input_image:
+            print('input image: {}'.format(args.input_image))
         if move_im:
             print('imagedir: {}'.format(imdir))
         print('log: {}/MORPHEUS_{}'.format(args.logdir, args.simid))
@@ -100,7 +104,8 @@ def main():
 
     # run simulation
     shutil.copy(args.script, './')
-    shutil.copy(args.input_image,'./')
+    if input_image:
+        shutil.copy(args.input_image,'./')
 
     os.system('{} {} > {}/MORPHEUS_{}.out 2>&1'.format(args.morpheus, args.script, args.logdir, args.simid))
 
